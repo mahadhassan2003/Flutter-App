@@ -1496,6 +1496,7 @@ Terms & Conditions
     
     int? instDuration;
     int? instDownPct;
+    bool includeRegFee = false;
     
     final priceStr = bike.price.replaceAll(RegExp(r'[^0-9]'), '');
     final singlePrice = int.tryParse(priceStr) ?? 0;
@@ -1674,6 +1675,38 @@ Terms & Conditions
                                 ),
                               ],
                             ),
+                            // Registration Fee toggle (shown once a duration is picked)
+                            if (instDuration != null) ...[
+                              const SizedBox(height: 10),
+                              InkWell(
+                                onTap: () => setD(() => includeRegFee = !includeRegFee),
+                                borderRadius: BorderRadius.circular(8),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+                                  child: Row(
+                                    children: [
+                                      SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: Checkbox(
+                                          value: includeRegFee,
+                                          onChanged: (v) => setD(() => includeRegFee = v ?? false),
+                                          activeColor: const Color(0xFF00FF88),
+                                          side: const BorderSide(color: Colors.white54),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      const Expanded(
+                                        child: Text(
+                                          'Include Registration Charges (PKR 6,000)',
+                                          style: TextStyle(color: Colors.white70, fontSize: 13),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
                             if (instDuration != null && instDownPct != null) ...[
                               const SizedBox(height: 12),
                               Container(
@@ -1687,23 +1720,29 @@ Terms & Conditions
                                   builder: (context) {
                                     final tPrice = singlePrice * qty;
                                     final baseDown = tPrice * instDownPct! ~/ 100;
+                                    final dur = instDuration!;
                                     final isZeroReg = bike.name.toLowerCase().contains('flipper') || bike.name.toLowerCase().contains('mito plus');
-                                    final regFee = isZeroReg ? 0 : (6000 * qty);
+                                    // Registration fee: only if model supports it AND user opted in
+                                    final regFee = (includeRegFee && !isZeroReg) ? (6000 * qty) : 0;
+                                    // Processing fee: merged into monthly installments
                                     final procFee = 20000 * qty;
-                                    final totalAdvance = baseDown + regFee + procFee;
+                                    final procFeePerMonth = procFee ~/ dur;
+                                    // Advance = base down + optional reg fee (proc fee NOT included)
+                                    final totalAdvance = baseDown + regFee;
                                     final financed = tPrice - baseDown;
-                                    final monthly = financed ~/ instDuration!;
+                                    final monthly = (financed ~/ dur) + procFeePerMonth;
 
                                     return Column(
                                       children: [
                                         summaryRow('Vehicle Price', 'PKR $tPrice'),
                                         summaryRow('Base Down (${instDownPct}%)', 'PKR $baseDown'),
-                                        summaryRow('Processing Fee', 'PKR $procFee'),
-                                        summaryRow('Registration Charges', 'PKR $regFee'),
+                                        if (includeRegFee && !isZeroReg)
+                                          summaryRow('Registration Charges', 'PKR $regFee'),
                                         const Divider(color: Colors.blueGrey),
                                         summaryRow('Total Advance Payment', 'PKR $totalAdvance', isBold: true),
                                         const SizedBox(height: 8),
                                         summaryRow('Financed Amount', 'PKR $financed'),
+                                        summaryRow('Processing Fee (in monthly)', 'PKR $procFeePerMonth/mo'),
                                         const SizedBox(height: 16),
                                         // Hero Price Tag
                                         Container(
@@ -1780,6 +1819,7 @@ Terms & Conditions
                         quantity: qty,
                         instDuration: instDuration,
                         instDownPct: instDownPct,
+                        includeRegFee: includeRegFee,
                       );
 
                       if (context.mounted) {
@@ -1815,6 +1855,7 @@ Terms & Conditions
     required int quantity,
     int? instDuration,
     int? instDownPct,
+    bool includeRegFee = false,
   }) async {
     final priceStr = bike.price.replaceAll(RegExp(r'[^0-9]'), '');
     final basePrice = int.tryParse(priceStr) ?? 0;
@@ -1830,16 +1871,23 @@ Terms & Conditions
     int registrationFee = 0;
 
     if (isInstallment) {
+      final dur = instDuration!;
+      final downPct = instDownPct!;
       final isZeroReg = bike.name.toLowerCase().contains('flipper') || bike.name.toLowerCase().contains('mito plus');
-      registrationFee = isZeroReg ? 0 : (6000 * quantity);
+      // Registration fee: optional and model-dependent
+      registrationFee = (includeRegFee && !isZeroReg) ? (6000 * quantity) : 0;
+      // Processing fee: spread into monthly installments
       processingFee = 20000 * quantity;
-      
-      final baseDown = tPrice * instDownPct! ~/ 100;
-      downPayment = baseDown + processingFee + registrationFee;
-      
+      final procFeePerMonth = processingFee ~/ dur;
+
+      final baseDown = tPrice * downPct ~/ 100;
+      // Advance = base down + optional reg fee (proc fee NOT included)
+      downPayment = baseDown + registrationFee;
+
       remaining = tPrice - baseDown; // Financed amount
-      monthlyAmount = remaining ~/ instDuration!;
-      
+      // Monthly = financed share + processing fee share
+      monthlyAmount = (remaining ~/ dur) + procFeePerMonth;
+
       totalAmount = tPrice + processingFee + registrationFee;
     }
 
@@ -3749,6 +3797,121 @@ Terms & Conditions
                                                       .toString(),
                                                 ),
                                               ),
+                                            if ((inv?['text'] ?? '')
+                                                .toString()
+                                                .trim()
+                                                .isNotEmpty)
+                                              ElevatedButton.icon(
+                                                icon: const Icon(
+                                                  Icons.delete_outline_rounded,
+                                                  size: 16,
+                                                ),
+                                                label: const Text(
+                                                  'Delete',
+                                                  style: TextStyle(fontSize: 12),
+                                                ),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor:
+                                                      Colors.red.withOpacity(0.7),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 4,
+                                                      ),
+                                                  minimumSize: Size.zero,
+                                                ),
+                                                onPressed: () async {
+                                                  final confirm =
+                                                      await showDialog<bool>(
+                                                    context: context,
+                                                    barrierColor: Colors.black
+                                                        .withOpacity(0.55),
+                                                    builder: (ctx) =>
+                                                        _GlassDialog(
+                                                          title: Row(
+                                                            children: const [
+                                                              Icon(
+                                                                Icons
+                                                                    .delete_forever_rounded,
+                                                                size: 18,
+                                                              ),
+                                                              SizedBox(width: 8),
+                                                              Flexible(
+                                                                child: Text(
+                                                                  'Delete Invoice?',
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                          content: Text(
+                                                            'This will permanently remove the invoice for ${(inv?['number'] ?? '').toString()}.',
+                                                            style: TextStyle(
+                                                              color: Colors
+                                                                  .white
+                                                                  .withOpacity(
+                                                                0.9,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                          actions: [
+                                                            _GhostButton(
+                                                              text: 'Cancel',
+                                                              onTap: () =>
+                                                                  Navigator.pop(
+                                                                    ctx,
+                                                                    false,
+                                                                  ),
+                                                            ),
+                                                            _DangerButton(
+                                                              text: 'Delete',
+                                                              onTap: () =>
+                                                                  Navigator.pop(
+                                                                    ctx,
+                                                                    true,
+                                                                  ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                  );
+
+                                                  if (confirm == true) {
+                                                    try {
+                                                      await _ordersCol
+                                                          .doc(m['id']
+                                                              as String)
+                                                          .update({
+                                                            'invoice':
+                                                                FieldValue
+                                                                    .delete(),
+                                                          });
+
+                                                      if (context.mounted) {
+                                                        ScaffoldMessenger.of(
+                                                          context,
+                                                        ).showSnackBar(
+                                                          const SnackBar(
+                                                            content: Text(
+                                                              'Invoice deleted.',
+                                                            ),
+                                                          ),
+                                                        );
+                                                      }
+                                                    } catch (e) {
+                                                      if (context.mounted) {
+                                                        ScaffoldMessenger.of(
+                                                          context,
+                                                        ).showSnackBar(
+                                                          SnackBar(
+                                                            content: Text(
+                                                              'Delete failed: $e',
+                                                            ),
+                                                          ),
+                                                        );
+                                                      }
+                                                    }
+                                                  }
+                                                },
+                                              ),
                                             if ((ch?['text'] ?? '')
                                                 .toString()
                                                 .trim()
@@ -3767,6 +3930,121 @@ Terms & Conditions
                                                   text: (ch?['text'] ?? '')
                                                       .toString(),
                                                 ),
+                                              ),
+                                            if ((ch?['text'] ?? '')
+                                                .toString()
+                                                .trim()
+                                                .isNotEmpty)
+                                              ElevatedButton.icon(
+                                                icon: const Icon(
+                                                  Icons.delete_outline_rounded,
+                                                  size: 16,
+                                                ),
+                                                label: const Text(
+                                                  'Delete',
+                                                  style: TextStyle(fontSize: 12),
+                                                ),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor:
+                                                      Colors.red.withOpacity(0.7),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 4,
+                                                      ),
+                                                  minimumSize: Size.zero,
+                                                ),
+                                                onPressed: () async {
+                                                  final confirm =
+                                                      await showDialog<bool>(
+                                                    context: context,
+                                                    barrierColor: Colors.black
+                                                        .withOpacity(0.55),
+                                                    builder: (ctx) =>
+                                                        _GlassDialog(
+                                                          title: Row(
+                                                            children: const [
+                                                              Icon(
+                                                                Icons
+                                                                    .delete_forever_rounded,
+                                                                size: 18,
+                                                              ),
+                                                              SizedBox(width: 8),
+                                                              Flexible(
+                                                                child: Text(
+                                                                  'Delete Chalan?',
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                          content: Text(
+                                                            'This will permanently remove the delivery chalan for ${(ch?['number'] ?? '').toString()}.',
+                                                            style: TextStyle(
+                                                              color: Colors
+                                                                  .white
+                                                                  .withOpacity(
+                                                                0.9,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                          actions: [
+                                                            _GhostButton(
+                                                              text: 'Cancel',
+                                                              onTap: () =>
+                                                                  Navigator.pop(
+                                                                    ctx,
+                                                                    false,
+                                                                  ),
+                                                            ),
+                                                            _DangerButton(
+                                                              text: 'Delete',
+                                                              onTap: () =>
+                                                                  Navigator.pop(
+                                                                    ctx,
+                                                                    true,
+                                                                  ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                  );
+
+                                                  if (confirm == true) {
+                                                    try {
+                                                      await _ordersCol
+                                                          .doc(m['id']
+                                                              as String)
+                                                          .update({
+                                                            'chalan':
+                                                                FieldValue
+                                                                    .delete(),
+                                                          });
+
+                                                      if (context.mounted) {
+                                                        ScaffoldMessenger.of(
+                                                          context,
+                                                        ).showSnackBar(
+                                                          const SnackBar(
+                                                            content: Text(
+                                                              'Delivery Chalan deleted.',
+                                                            ),
+                                                          ),
+                                                        );
+                                                      }
+                                                    } catch (e) {
+                                                      if (context.mounted) {
+                                                        ScaffoldMessenger.of(
+                                                          context,
+                                                        ).showSnackBar(
+                                                          SnackBar(
+                                                            content: Text(
+                                                              'Delete failed: $e',
+                                                            ),
+                                                          ),
+                                                        );
+                                                      }
+                                                    }
+                                                  }
+                                                },
                                               ),
                                           ],
                                         ),
